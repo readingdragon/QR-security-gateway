@@ -1,6 +1,6 @@
 package com.qrsg.app.domain.analyzer
 
-import android.net.Uri
+import java.net.URI
 
 enum class RiskLevel {
     LOW_RISK,
@@ -44,17 +44,17 @@ object LocalUrlAnalyzer {
         val value = rawValue.trim()
 
         if (value.isBlank()) {
-            return unverified("QR-код не містить тексту.")
+            return unverified("The QR code does not contain text.")
         }
 
         if (value.any { it.isWhitespace() }) {
-            return unverified("Вміст містить пробіли й не схожий на коректний URL.")
+            return unverified("The content contains spaces and does not look like a valid URL.")
         }
 
         val uri = try {
-            Uri.parse(value)
+            URI(value)
         } catch (_: Exception) {
-            return unverified("Не вдалося розібрати адресу.")
+            return unverified("Failed to parse the address.")
         }
 
         val scheme = uri.scheme?.lowercase()
@@ -62,60 +62,60 @@ object LocalUrlAnalyzer {
 
         if (scheme !in setOf("http", "https") || host.isNullOrBlank()) {
             return unverified(
-                "Це не повна вебадреса HTTP/HTTPS. Не відкривайте її, доки не перевірите вміст."
+                "This is not a complete HTTP/HTTPS web address. Do not open it until you have verified its content."
             )
         }
 
         val reasons = mutableListOf<String>()
 
         if (scheme == "http") {
-            reasons += "З'єднання використовує HTTP без шифрування HTTPS."
+            reasons += "The connection uses HTTP without HTTPS encryption."
         }
 
-        if (uri.encodedAuthority?.contains('@') == true) {
-            reasons += "Адреса містить символ @ в частині з доменом — перевірте справжній хост."
+        if (uri.rawAuthority?.contains('@') == true) {
+            reasons += "The address contains an @ symbol in the domain part — check the actual host."
         }
 
         if (host.startsWith("xn--") || host.split('.').any { it.startsWith("xn--") }) {
-            reasons += "Домен містить Punycode (xn--); перевірте, чи не маскується схожий символ."
+            reasons += "The domain contains Punycode (xn--); check whether a similar-looking character is being used for masking."
         }
 
         if (IPV4.matches(host)) {
-            reasons += "Замість звичайного доменного імені використано IPv4-адресу."
+            reasons += "An IPv4 address is used instead of a standard domain name."
         }
 
         if (host in knownShorteners) {
-            reasons += "Використано сервіс скорочення посилань; кінцевий сайт тут невідомий."
+            reasons += "A link-shortening service was used; the final destination is unknown."
         }
 
         if (host.split('.').size >= 5) {
-            reasons += "Домен має багато рівнів піддоменів."
+            reasons += "The domain has many levels of subdomains."
         }
 
         if (value.length > 200) {
-            reasons += "URL незвично довгий."
+            reasons += "The URL is unusually long."
         }
 
-        val pathAndQuery = "${uri.path.orEmpty()}?${uri.query.orEmpty()}"
+        val pathAndQuery = "${uri.rawPath.orEmpty()}?${uri.rawQuery.orEmpty()}"
             .lowercase()
 
-        if (suspiciousWords.any { word -> pathAndQuery.contains(word) }) {
-            reasons += "У шляху або параметрах є слова, які часто зустрічаються в запитах входу чи перевірки облікового запису."
+        if (suspiciousWords.any(pathAndQuery::contains)) {
+            reasons += "The path or parameters contain words that frequently appear in login or account verification requests."
         }
 
         return if (reasons.isEmpty()) {
             UrlAnalysisResult(
                 riskLevel = RiskLevel.LOW_RISK,
-                title = "Очевидних локальних ознак ризику не знайдено",
+                title = "No obvious local signs of risk were found.",
                 reasons = listOf(
-                    "Це не підтверджує безпечність сайту. Репутацію URL ще не перевірено."
+                    "This does not confirm the safety of the site. The URL's reputation has not yet been checked."
                 ),
                 isWebUrl = true,
             )
         } else {
             UrlAnalysisResult(
                 riskLevel = RiskLevel.SUSPICIOUS,
-                title = "Виявлено ознаки, які варто перевірити",
+                title = "Signs have been detected that are worth checking",
                 reasons = reasons,
                 isWebUrl = true,
             )
@@ -124,12 +124,10 @@ object LocalUrlAnalyzer {
 
     private fun unverified(reason: String) = UrlAnalysisResult(
         riskLevel = RiskLevel.UNVERIFIED,
-        title = "Не вдалося підтвердити вебадресу",
+        title = "Could not verify the web address",
         reasons = listOf(reason),
         isWebUrl = false,
     )
 
-    private val IPV4 = Regex(
-        """^(?:\d{1,3}\.){3}\d{1,3}$"""
-    )
+    private val IPV4 = Regex("""^(?:\d{1,3}\.){3}\d{1,3}$""")
 }
