@@ -46,7 +46,7 @@ private fun ScannerHomeScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
-            text = "QR_SG",
+            text = "QR Security Gateway",
             style = MaterialTheme.typography.headlineLarge,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary,
@@ -54,10 +54,10 @@ private fun ScannerHomeScreen(
 
         Spacer(Modifier.height(8.dp))
 
-        Text(
-            text = "QR Security Gateway",
-            style = MaterialTheme.typography.titleMedium,
-        )
+        // Text(
+        //     text = "QR Security Gateway",
+        //     style = MaterialTheme.typography.titleMedium,
+        // )
 
         Spacer(Modifier.height(32.dp))
 
@@ -67,7 +67,7 @@ private fun ScannerHomeScreen(
                 .height(220.dp),
             shape = RoundedCornerShape(24.dp),
             colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
             ),
         ) {
             Column(
@@ -77,14 +77,14 @@ private fun ScannerHomeScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {
-                Text("▦", style = MaterialTheme.typography.displayLarge)
+                Text("⛶", style = MaterialTheme.typography.displayLarge)
                 Spacer(Modifier.height(8.dp))
                 Text(
                     text = "QR scanner",
                     style = MaterialTheme.typography.titleLarge,
                 )
                 Text(
-                    text = "Scan a code before opening its link",
+                    text = "Let me check it first.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
