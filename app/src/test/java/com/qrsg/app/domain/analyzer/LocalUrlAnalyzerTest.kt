@@ -29,7 +29,7 @@ class LocalUrlAnalyzerTest {
         val result = LocalUrlAnalyzer.analyze("https://bit.ly/example")
 
         assertEquals(RiskLevel.SUSPICIOUS, result.riskLevel)
-        assertTrue(result.reasons.any { it.contains("clipped") })
+        assertTrue(result.reasons.any { it.contains("link-shortening") })
     }
 
     @Test
