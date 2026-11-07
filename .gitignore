@@ -1,56 +1,32 @@
-# Gradle files
+# Gradle caches and generated build outputs
 .gradle/
-build/
 .kotlin/
+**/build/
 
-# Local configuration file (sdk path, etc)
+# Machine-specific local Android SDK path
 local.properties
 
-# Log/OS Files
-*.log
-
-# Android Studio generated files and folders
+# IDE and generated files
+.idea/
+*.iml
 captures/
 .externalNativeBuild/
 .cxx/
-*.aab
-*.apk
-output-metadata.json
-
-# IntelliJ
-*.iml
-.idea/
-misc.xml
-deploymentTargetDropDown.xml
-render.experimental.xml
-
-# Keystore files
-*.jks
-*.keystore
-
-# Google Services (e.g. APIs or Firebase)
-google-services.json
-
-# Android Profiling
+.DS_Store
+*.log
 *.hprof
 
+# Build artifacts
+*.apk
+*.aab
+output-metadata.json
 
-*.iml
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
-.DS_Store
-build
-build.gradle.kts
-gradle.properties
-gradle
-gradlew
-gradlew.bat
-settings.gradle.kts
-/captures
-.externalNativeBuild
-.cxx
-local.properties
+# Signing material and secrets
+*.jks
+*.keystore
+google-services.json
+
+# IMPORTANT: do NOT ignore Gradle build scripts or the wrapper!
+# Commit build.gradle.kts, settings.gradle.kts, gradle.properties,
+# gradlew, gradlew.bat and gradle/wrapper/* (including gradle-wrapper.jar).
+# Review gradle.properties for secrets before committing it.
