@@ -26,67 +26,67 @@ internal object HeuristicRules {
         val host = url.host
         if (scheme == "http") flag(
             HeuristicRuleId.HTTP_SCHEME, FindingSeverity.MEDIUM,
-            "Використовується HTTP без захисту HTTPS.",
+            "HTTP is used without HTTPS protection.",
         )
         if (url.hasUserInfo) flag(
             HeuristicRuleId.USER_INFO, FindingSeverity.HIGH,
-            "URL містить дані користувача або @ перед hostname; перевірте справжній домен.",
+            "The URL contains user data or an @ symbol before the hostname; check the actual domain.",
         )
         if (host.split('.').any { it.startsWith("xn--") }) flag(
             HeuristicRuleId.PUNYCODE_HOST, FindingSeverity.MEDIUM,
-            "Hostname використовує Punycode (xn--): можливе маскування схожими символами.",
+            "The hostname uses Punycode (xn--): potential obfuscation via visually similar characters.",
         )
         if (url.unicodeHost) flag(
             HeuristicRuleId.UNICODE_HOST, FindingSeverity.MEDIUM,
-            "Hostname містить Unicode-символи; перевірте написання домену.",
+            "The hostname contains Unicode characters; check the domain spelling.",
         )
         val ipv4 = parseIpv4(host)
         val ipv6 = host.startsWith('[') && host.endsWith(']')
         if (ipv4 != null) flag(
             HeuristicRuleId.IPV4_HOST, FindingSeverity.MEDIUM,
-            "У URL використовується IPv4-адреса замість домену.",
+            "An IPv4 address is used in the URL instead of a domain.",
         )
         if (ipv6) flag(
             HeuristicRuleId.IPV6_HOST, FindingSeverity.MEDIUM,
-            "У URL використовується IPv6-адреса замість домену.",
+            "An IPv6 address is used in the URL instead of a domain.",
         )
         if (isNonPublic(host, ipv4, ipv6)) flag(
             HeuristicRuleId.NON_PUBLIC_DESTINATION, FindingSeverity.HIGH,
-            "Адреса вказує на локальний, приватний або службовий вузол.",
+            "The address points to a local, private, or service node.",
         )
         if (numericHost.matches(host) && ipv4 == null) flag(
             HeuristicRuleId.NUMERIC_HOST, FindingSeverity.HIGH,
-            "Нестандартне числове представлення hostname може маскувати IP-адресу.",
+            "A non-standard numerical representation of a hostname can mask an IP address.",
         )
         if (host.matches(Regex("(?:[0-9]+\\.){3}[0-9]+")) &&
             host.split('.').any { it.length > 1 && it.startsWith('0') }) flag(
             HeuristicRuleId.LEADING_ZERO_IPV4, FindingSeverity.HIGH,
-            "IPv4-адреса містить початкові нулі, що може призвести до різної інтерпретації.",
+            "The IPv4 address contains leading zeros, which can lead to different interpretations.",
         )
         if (host in shorteners || host.removePrefix("www.") in shorteners) flag(
             HeuristicRuleId.SHORTENER, FindingSeverity.MEDIUM,
-            "Посилання скорочене; кінцевий сайт без переходу невідомий.",
+            "The link is shortened; the final site is unknown without following it.",
         )
         if (!ipv6 && ipv4 == null && host.split('.').size >= SUBDOMAIN_LABEL_THRESHOLD) flag(
             HeuristicRuleId.MANY_SUBDOMAINS, FindingSeverity.LOW,
-            "Hostname має незвично багато рівнів піддоменів.",
+            "The hostname has an unusually large number of subdomain levels.",
         )
         if (url.source.length > LONG_URL_THRESHOLD) flag(
             HeuristicRuleId.LONG_URL, FindingSeverity.LOW,
-            "URL незвично довгий.",
+            "The URL is unusually long.",
         )
         val pathAndQuery = "${uri.path.orEmpty()}?${uri.query.orEmpty()}"
         if (keywords.containsMatchIn(pathAndQuery)) flag(
             HeuristicRuleId.SENSITIVE_KEYWORD, FindingSeverity.LOW,
-            "У URL присутні слова, пов’язані з авторизацією або перевіркою облікового запису.",
+            "The URL contains words related to authorization or account verification.",
         )
         if (doubleEncoding.containsMatchIn(url.source)) flag(
             HeuristicRuleId.DOUBLE_ENCODING, FindingSeverity.MEDIUM,
-            "URL містить ознаки подвійного percent-encoding.",
+            "The URL contains signs of double percent-encoding.",
         )
         if (url.port != -1 && url.port != if (scheme == "https") 443 else 80) flag(
             HeuristicRuleId.NON_STANDARD_PORT, FindingSeverity.LOW,
-            "URL використовує нестандартний порт.",
+            "The URL uses a non-standard port.",
         )
     }
 
