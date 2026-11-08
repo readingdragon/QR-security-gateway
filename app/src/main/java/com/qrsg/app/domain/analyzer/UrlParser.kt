@@ -27,20 +27,20 @@ internal object UrlParser {
         if (input.isEmpty()) return unsupported("QR-код не містить тексту.")
         if (input.length > MAX_INPUT_LENGTH) return unsupported("Вміст надто довгий для локального аналізу URL.")
         if (input.any { it.isWhitespace() || Character.isISOControl(it) }) {
-            return unsupported("URL містить пробіли або керувальні символи.")
+            return unsupported("URL contains whitespace or control characters.")
         }
         val uri = try { URI(input) } catch (_: URISyntaxException) {
-            return unsupported("Некоректний синтаксис URL.")
+            return unsupported("Invalid URL syntax.")
         }
         val scheme = uri.scheme?.lowercase(Locale.ROOT)
         if (scheme != "https" && scheme != "http") {
-            return unsupported("Підтримуються лише повні вебадреси HTTP/HTTPS; інші типи QR-вмісту не перевірено.")
+            return unsupported("Only full HTTP/HTTPS web addresses are supported; other types of QR content have not been tested.")
         }
         if (uri.isOpaque || uri.rawAuthority.isNullOrEmpty()) {
-            return unsupported("URL не містить коректного hostname.")
+            return unsupported("URL does not contain a valid hostname.")
         }
         val authority = uri.rawAuthority
-        if (authority.count { it == '@' } > 1) return unsupported("Некоректна частина URL з іменем користувача.")
+        if (authority.count { it == '@' } > 1) return unsupported("Invalid part of the URL containing the username.")
 
         val hostPort = if ('@' in authority) authority.substringAfterLast('@') else authority
         val unicodeHost = hostPort.any { it.code > 127 }
@@ -49,32 +49,32 @@ internal object UrlParser {
 
         if (!unicodeHost) {
             // Java's URI parser validates the ASCII hostname and bracketed IPv6 literal.
-            val javaHost = uri.host ?: return unsupported("URL містить некоректний hostname або порт.")
-            host = normalizeHost(javaHost) ?: return unsupported("URL містить некоректний hostname.")
+            val javaHost = uri.host ?: return unsupported("URL contains an invalid hostname or port.")
+            host = normalizeHost(javaHost) ?: return unsupported("URL contains an invalid hostname.")
             port = uri.port
-            if (hostPort.endsWith(':')) return unsupported("Порт URL не може бути порожнім.")
+            if (hostPort.endsWith(':')) return unsupported("URL port cannot be empty.")
         } else {
             // java.net.URI.host is null for many valid Unicode IDNs. Convert the
             // authority's hostname using IDN, then verify it with URI again.
-            if (hostPort.startsWith('[')) return unsupported("Некоректний IPv6 hostname.")
+            if (hostPort.startsWith('[')) return unsupported("Invalid IPv6 hostname.")
             val colonIndex = hostPort.lastIndexOf(':')
             val rawHost = if (colonIndex >= 0) hostPort.substring(0, colonIndex) else hostPort
-            if (':' in rawHost) return unsupported("Некоректний hostname URL.")
-            host = normalizeHost(rawHost) ?: return unsupported("Некоректне міжнародне доменне ім'я.")
+            if (':' in rawHost) return unsupported("Invalid URL hostname.")
+            host = normalizeHost(rawHost) ?: return unsupported("Invalid international domain name.")
             val portText = if (colonIndex >= 0) hostPort.substring(colonIndex + 1) else null
             port = when {
                 portText == null -> -1
-                portText.isEmpty() || !portText.all { it in '0'..'9' } -> return unsupported("Некоректний порт URL.")
-                else -> portText.toIntOrNull() ?: return unsupported("Некоректний порт URL.")
+                portText.isEmpty() || !portText.all { it in '0'..'9' } -> return unsupported("Invalid URL port.")
+                else -> portText.toIntOrNull() ?: return unsupported("Invalid URL port.")
             }
             val verified = try { URI("$scheme://$host${if (port >= 0) ":$port" else ""}/") }
-            catch (_: URISyntaxException) { return unsupported("Некоректне міжнародне доменне ім'я.") }
-            if (verified.host == null) return unsupported("Некоректне міжнародне доменне ім'я.")
+            catch (_: URISyntaxException) { return unsupported("Invalid international domain name.") }
+            if (verified.host == null) return unsupported("Invalid international domain name.")
         }
-        if (port != -1 && port !in 1..65535) return unsupported("Порт URL поза допустимим діапазоном.")
+        if (port != -1 && port !in 1..65535) return unsupported("The URL port is out of the valid range.")
         // Avoid accepting ambiguous colon syntax on a host, for example "host:+80".
         if (!unicodeHost && hostPort.contains(':') && !hostPort.startsWith('[') && port == -1) {
-            return unsupported("Некоректний порт URL.")
+            return unsupported("Invalid URL port.")
         }
         return ParseResult.WebUrl(
             source = input, uri = uri, host = host,
