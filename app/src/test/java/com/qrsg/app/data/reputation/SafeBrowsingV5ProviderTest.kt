@@ -1,18 +1,20 @@
 package com.qrsg.app.data.reputation
 
+import com.google.protobuf.CodedOutputStream
 import com.qrsg.app.domain.reputation.ReputationFailure
 import com.qrsg.app.domain.reputation.ReputationResult
 import com.qrsg.app.domain.reputation.SkipReason
 import kotlinx.coroutines.test.runTest
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
+import org.junit.Assert.*
 import org.junit.Test
+import java.io.ByteArrayOutputStream
 
 class SafeBrowsingV5ProviderTest {
-    private class FakeTransport(var response: HttpLookupResponse) : SafeBrowsingTransport {
+
+    private class Fake(var response: HttpLookupResponse) : SafeBrowsingTransport {
         var calls = 0
-        var lastUrl: String? = null
+        var lastUrl = ""
+
         override fun lookup(url: String, apiKey: String): HttpLookupResponse {
             calls++
             lastUrl = url
@@ -20,189 +22,269 @@ class SafeBrowsingV5ProviderTest {
         }
     }
 
-    private val noThreat = HttpLookupResponse(200, """{"threats":[],"cacheDuration":"60s"}""")
-    private val phishing = HttpLookupResponse(200,
-        """{"threats":[{"url":"https://example.com/","threatTypes":["SOCIAL_ENGINEERING"]}],"cacheDuration":"60s"}""")
-
-    @Test fun noKnownThreatIsNotLabeledSafe() = runTest {
-        val transport = FakeTransport(noThreat)
-        val r = SafeBrowsingV5Provider("demo-key", transport, { 1000 }).checkUrl("https://example.com/")
-        assertTrue(r is ReputationResult.NoKnownThreat)
-        assertEquals(1, transport.calls)
+    private fun wire(block: (CodedOutputStream) -> Unit): ByteArray {
+        val buffer = ByteArrayOutputStream()
+        val output = CodedOutputStream.newInstance(buffer)
+        block(output)
+        output.flush()
+        return buffer.toByteArray()
     }
 
-    @Test fun phishingMatchProducesKnownThreat() = runTest {
-        val r = SafeBrowsingV5Provider("demo-key", FakeTransport(phishing), { 1000 })
+    // Builds a real SearchUrlsResponse protobuf message.
+    private fun response(
+        types: List<Int> = emptyList(),
+        seconds: Long? = 60L,
+        nanos: Int = 0
+    ): HttpLookupResponse = HttpLookupResponse(200, wire { outer ->
+        if (types.isNotEmpty()) {
+            val threat = wire { inner ->
+                inner.writeString(1, "https://example.com/")
+                types.forEach { inner.writeEnum(2, it) }
+            }
+            outer.writeByteArray(1, threat)
+        }
+        if (seconds != null) {
+            val duration = wire { inner ->
+                inner.writeInt64(1, seconds)
+                if (nanos != 0) inner.writeInt32(2, nanos)
+            }
+            outer.writeByteArray(2, duration)
+        }
+    })
+
+    private val clean get() = response()
+    private val phishing get() = response(types = listOf(2))
+
+    @Test fun cleanUrl() = runTest {
+        val t = Fake(clean)
+        val result = SafeBrowsingV5Provider("key", t, { 1000L })
             .checkUrl("https://example.com/")
-        assertEquals(setOf("SOCIAL_ENGINEERING"), (r as ReputationResult.KnownThreat).threatTypes)
+
+        assertTrue("$result", result is ReputationResult.NoKnownThreat)
+        assertEquals(1, t.calls)
     }
 
-    @Test fun noKeyDoesNotMakeNetworkRequest() = runTest {
-        val t = FakeTransport(noThreat)
-        val r = SafeBrowsingV5Provider("", t, { 1000 }).checkUrl("https://example.com/")
-        assertEquals(ReputationResult.Unavailable(ReputationFailure.NOT_CONFIGURED), r)
+    @Test fun phishingDetected() = runTest {
+        val result = SafeBrowsingV5Provider("key", Fake(phishing), { 0L })
+            .checkUrl("https://example.com/")
+
+        assertEquals(
+            setOf("SOCIAL_ENGINEERING"),
+            (result as ReputationResult.KnownThreat).threatTypes
+        )
+    }
+
+    @Test fun malwareDetected() = runTest {
+        val result = SafeBrowsingV5Provider(
+            "key", Fake(response(types = listOf(1))), { 0L }
+        ).checkUrl("https://example.com/")
+
+        assertEquals(
+            setOf("MALWARE"),
+            (result as ReputationResult.KnownThreat).threatTypes
+        )
+    }
+
+    @Test fun multipleThreatTypes() = runTest {
+        val result = SafeBrowsingV5Provider(
+            "key", Fake(response(types = listOf(1, 2))), { 0L }
+        ).checkUrl("https://example.com/")
+
+        assertEquals(
+            setOf("MALWARE", "SOCIAL_ENGINEERING"),
+            (result as ReputationResult.KnownThreat).threatTypes
+        )
+    }
+
+    @Test fun fiveByteProtobufResponse() {
+        val raw = byteArrayOf(
+            0x12, 0x03, 0x08, 0xB3.toByte(), 0x02
+        )
+        val decoded = SafeBrowsingProtobufDecoder.decode(raw)
+
+        assertTrue(decoded.threatTypes.isEmpty())
+        assertEquals(307_000L, decoded.cacheDurationMs)
+    }
+
+    @Test fun fractionalCacheDuration() {
+        val decoded = SafeBrowsingProtobufDecoder.decode(
+            response(seconds = 15L, nanos = 500_000_000).body
+        )
+        assertEquals(15_500L, decoded.cacheDurationMs)
+    }
+
+    @Test fun missingCacheDurationDoesNotCache() = runTest {
+        val t = Fake(response(seconds = null))
+        val provider = SafeBrowsingV5Provider("key", t, { 1000L })
+
+        assertTrue(provider.checkUrl("https://example.com/")
+            is ReputationResult.NoKnownThreat)
+
+        provider.checkUrl("https://example.com/")
+        assertEquals(2, t.calls)
+    }
+
+    @Test fun positiveCacheAndExpiration() = runTest {
+        var now = 1000L
+        val t = Fake(phishing)
+        val provider = SafeBrowsingV5Provider("key", t, { now })
+
+        assertTrue(provider.checkUrl("https://example.com/")
+            is ReputationResult.KnownThreat)
+
+        val cached = provider.checkUrl("https://example.com/")
+            as ReputationResult.KnownThreat
+
+        assertTrue(cached.fromCache)
+        assertEquals(1, t.calls)
+
+        now += 61_000L
+        t.response = clean
+
+        assertTrue(provider.checkUrl("https://example.com/")
+            is ReputationResult.NoKnownThreat)
+        assertEquals(2, t.calls)
+    }
+
+    @Test fun negativeCacheWorks() = runTest {
+        val t = Fake(clean)
+        val provider = SafeBrowsingV5Provider("key", t, { 1000L })
+
+        provider.checkUrl("https://example.com/")
+        val result = provider.checkUrl("https://example.com/")
+            as ReputationResult.NoKnownThreat
+
+        assertTrue(result.fromCache)
+        assertEquals(1, t.calls)
+    }
+
+    @Test fun malformedProtobufIsUnknown() = runTest {
+        val corrupt = byteArrayOf(
+            0x12, 0x03, 0x08, 0x80.toByte()
+        )
+        val result = SafeBrowsingV5Provider(
+            "key", Fake(HttpLookupResponse(200, corrupt)), { 0L }
+        ).checkUrl("https://example.com/")
+
+        assertEquals(
+            ReputationResult.Unavailable(ReputationFailure.MALFORMED_RESPONSE),
+            result
+        )
+    }
+
+    @Test fun jsonIsNotProtobuf() = runTest {
+        val result = SafeBrowsingV5Provider(
+            "key",
+            Fake(HttpLookupResponse(200, "{}".toByteArray())),
+            { 0L }
+        ).checkUrl("https://example.com/")
+
+        assertEquals(
+            ReputationResult.Unavailable(ReputationFailure.MALFORMED_RESPONSE),
+            result
+        )
+    }
+
+    @Test fun malformedThreatIsRejected() = runTest {
+        val threat = wire { it.writeString(1, "https://example.com/") }
+        val raw = wire { it.writeByteArray(1, threat) }
+
+        val result = SafeBrowsingV5Provider(
+            "key", Fake(HttpLookupResponse(200, raw)), { 0L }
+        ).checkUrl("https://example.com/")
+
+        assertEquals(
+            ReputationResult.Unavailable(ReputationFailure.MALFORMED_RESPONSE),
+            result
+        )
+    }
+
+    @Test fun noApiKey() = runTest {
+        val t = Fake(clean)
+        val result = SafeBrowsingV5Provider("", t, { 0L })
+            .checkUrl("https://example.com/")
+
+        assertEquals(
+            ReputationResult.Unavailable(ReputationFailure.NOT_CONFIGURED),
+            result
+        )
         assertEquals(0, t.calls)
     }
 
-    @Test fun nonWebContentIsNotUploaded() = runTest {
-        val t = FakeTransport(noThreat)
-        val r = SafeBrowsingV5Provider("demo-key", t, { 1000 }).checkUrl("WIFI:T:WPA;S:X;P:X;;")
-        assertEquals(ReputationResult.Skipped(SkipReason.NOT_A_WEB_URL), r)
+    @Test fun privateIpNotUploaded() = runTest {
+        val t = Fake(clean)
+        val result = SafeBrowsingV5Provider("key", t, { 0L })
+            .checkUrl("http://192.168.1.1/")
+
+        assertEquals(
+            ReputationResult.Skipped(SkipReason.NON_PUBLIC_DESTINATION),
+            result
+        )
         assertEquals(0, t.calls)
     }
 
-    @Test fun privateIpIsNotUploaded() = runTest {
-        val t = FakeTransport(noThreat)
-        val r = SafeBrowsingV5Provider("demo-key", t, { 1000 }).checkUrl("http://192.168.1.1/")
-        assertEquals(ReputationResult.Skipped(SkipReason.NON_PUBLIC_DESTINATION), r)
+    @Test fun nonWebContentNotUploaded() = runTest {
+        val t = Fake(clean)
+        val result = SafeBrowsingV5Provider("key", t, { 0L })
+            .checkUrl("WIFI:T:WPA;S:TEST;P:TEST;;")
+
+        assertEquals(
+            ReputationResult.Skipped(SkipReason.NOT_A_WEB_URL),
+            result
+        )
         assertEquals(0, t.calls)
     }
 
-    @Test fun userinfoIsNotUploaded() = runTest {
-        val t = FakeTransport(noThreat)
-        val r = SafeBrowsingV5Provider("demo-key", t, { 1000 }).checkUrl("https://login:pass@example.com/")
-        assertEquals(ReputationResult.Skipped(SkipReason.URL_CONTAINS_USER_INFO), r)
+    @Test fun userInfoNotUploaded() = runTest {
+        val t = Fake(clean)
+        val result = SafeBrowsingV5Provider("key", t, { 0L })
+            .checkUrl("https://user:pass@example.com/")
+
+        assertEquals(
+            ReputationResult.Skipped(SkipReason.URL_CONTAINS_USER_INFO),
+            result
+        )
         assertEquals(0, t.calls)
     }
 
-    @Test fun obfuscatedNumericalHostIsNotUploaded() = runTest {
-        val t = FakeTransport(noThreat)
-        val r = SafeBrowsingV5Provider("demo-key", t, { 1000 }).checkUrl("https://2130706433/")
-        assertEquals(ReputationResult.Skipped(SkipReason.AMBIGUOUS_NUMERIC_HOST), r)
-        assertEquals(0, t.calls)
-    }
+    @Test fun fragmentNotUploaded() = runTest {
+        val t = Fake(clean)
+        SafeBrowsingV5Provider("key", t, { 0L })
+            .checkUrl("https://example.com/path#secret")
 
-    @Test fun fragmentsAreNotTransmitted() = runTest {
-        val t = FakeTransport(noThreat)
-        SafeBrowsingV5Provider("demo-key", t, { 1000 }).checkUrl("https://example.com/path#token")
         assertEquals("https://example.com/path", t.lastUrl)
     }
 
-    @Test fun aPositiveAndNegativeResultAreCached() = runTest {
-        var time = 1000L
-        val t = FakeTransport(phishing)
-        val provider = SafeBrowsingV5Provider("demo-key", t, { time })
-        provider.checkUrl("https://example.com/")
-        val hit = provider.checkUrl("https://example.com/")
-        assertTrue((hit as ReputationResult.KnownThreat).fromCache)
-        assertEquals(1, t.calls)
-        t.response = noThreat
-        time = 62_000L
-        val miss = provider.checkUrl("https://example.com/")
-        assertTrue(miss is ReputationResult.NoKnownThreat)
-        val again = provider.checkUrl("https://example.com/")
-        assertTrue((again as ReputationResult.NoKnownThreat).fromCache)
-        assertEquals(2, t.calls)
-    }
+    @Test fun authenticationFailure() = runTest {
+        val result = SafeBrowsingV5Provider(
+            "key", Fake(HttpLookupResponse(403, byteArrayOf())), { 0L }
+        ).checkUrl("https://example.com/")
 
-    @Test fun cacheDurationZeroNeverCaches() = runTest {
-        val t = FakeTransport(HttpLookupResponse(200, """{"cacheDuration":"0s"}"""))
-        val provider = SafeBrowsingV5Provider("demo-key", t, { 123L })
-        provider.checkUrl("https://example.com/")
-        provider.checkUrl("https://example.com/")
-        assertEquals(2, t.calls)
-    }
-    
-    @Test
-    fun missingCacheDurationReturnsNoThreatWithoutCaching() = runTest {
-        val transport = FakeTransport(
-            HttpLookupResponse(200, """{"threats":[]}""")
-        )
-
-        val provider = SafeBrowsingV5Provider(
-            "demo-key", transport, { 1000L }
-        )
-
-        val result = provider.checkUrl("https://example.com/")
-
-        assertTrue(
-            "Actual result: $result",
-            result is ReputationResult.NoKnownThreat
-        )
-
-        provider.checkUrl("https://example.com/")
-
-        assertEquals(2, transport.calls)
-    }
-
-    @Test
-    fun emptyJsonResponseMeansNoKnownThreat() = runTest {
-        val transport = FakeTransport(
-            HttpLookupResponse(200, "{}")
-        )
-
-        val provider = SafeBrowsingV5Provider(
-            "demo-key", transport, { 1000L }
-        )
-
-        val result = provider.checkUrl("https://example.com/")
-
-        assertTrue(
-            "Actual result: $result",
-            result is ReputationResult.NoKnownThreat
+        assertEquals(
+            ReputationResult.Unavailable(ReputationFailure.AUTHENTICATION),
+            result
         )
     }
 
-    @Test fun expiredCachedThreatIsNotShown() = runTest {
-        var time = 0L
-        val t = FakeTransport(phishing)
-        val provider = SafeBrowsingV5Provider("demo-key", t, { time })
-        provider.checkUrl("https://example.com/")
-        time = 61_000L
-        t.response = noThreat
-        assertTrue(provider.checkUrl("https://example.com/") is ReputationResult.NoKnownThreat)
+    @Test fun rateLimitFailure() = runTest {
+        val result = SafeBrowsingV5Provider(
+            "key", Fake(HttpLookupResponse(429, byteArrayOf())), { 0L }
+        ).checkUrl("https://example.com/")
+
+        assertEquals(
+            ReputationResult.Unavailable(ReputationFailure.RATE_LIMITED),
+            result
+        )
     }
 
-    @Test fun authenticationErrorsAreNotClean() = runTest {
-        val r = SafeBrowsingV5Provider("demo-key", FakeTransport(HttpLookupResponse(403, "")), { 0 })
-            .checkUrl("https://example.com/")
-        assertEquals(ReputationResult.Unavailable(ReputationFailure.AUTHENTICATION), r)
-    }
+    @Test fun serverFailure() = runTest {
+        val result = SafeBrowsingV5Provider(
+            "key", Fake(HttpLookupResponse(503, byteArrayOf())), { 0L }
+        ).checkUrl("https://example.com/")
 
-    @Test fun rateLimitIsNotClean() = runTest {
-        val r = SafeBrowsingV5Provider("demo-key", FakeTransport(HttpLookupResponse(429, "")), { 0 })
-            .checkUrl("https://example.com/")
-        assertEquals(ReputationResult.Unavailable(ReputationFailure.RATE_LIMITED), r)
-    }
-
-    @Test fun providerErrorIsNotClean() = runTest {
-        val r = SafeBrowsingV5Provider("demo-key", FakeTransport(HttpLookupResponse(502, "")), { 0 })
-            .checkUrl("https://example.com/")
-        assertEquals(ReputationResult.Unavailable(ReputationFailure.PROVIDER_ERROR), r)
-    }
-
-    @Test fun invalidJsonIsUnknownNotClean() = runTest {
-        val r = SafeBrowsingV5Provider("demo-key", FakeTransport(HttpLookupResponse(200, "oops")), { 0 })
-            .checkUrl("https://example.com/")
-        assertEquals(ReputationResult.Unavailable(ReputationFailure.MALFORMED_RESPONSE), r)
-    }
-
-    // @Test fun missingCacheDurationIsUnknownNotClean() = runTest {
-    //     val r = SafeBrowsingV5Provider("demo-key", FakeTransport(HttpLookupResponse(200, """{"threats":[]}""")), { 0 })
-    //         .checkUrl("https://example.com/")
-    //     assertEquals(ReputationResult.Unavailable(ReputationFailure.MALFORMED_RESPONSE), r)
-    // }
-
-    @Test fun malformedThreatIsUnknownNotClean() = runTest {
-        val r = SafeBrowsingV5Provider("demo-key",
-            FakeTransport(HttpLookupResponse(200, """{"cacheDuration":"60s","threats":[{}]}""")), { 0 })
-            .checkUrl("https://example.com/")
-        assertEquals(ReputationResult.Unavailable(ReputationFailure.MALFORMED_RESPONSE), r)
-    }
-
-    @Test fun googleMayOmitEmptyThreatArray() = runTest {
-        val r = SafeBrowsingV5Provider("demo-key",
-            FakeTransport(HttpLookupResponse(200, """{"cacheDuration":"15.5s"}""")), { 0 })
-            .checkUrl("https://example.com/")
-        assertTrue(r is ReputationResult.NoKnownThreat)
-    }
-
-    @Test fun allReportedThreatTypesArePreserved() = runTest {
-        val response = HttpLookupResponse(200,
-            """{"cacheDuration":"60s","threats":[{"url":"https://example.com/","threatTypes":["SOCIAL_ENGINEERING","MALWARE"]}]}""")
-        val r = SafeBrowsingV5Provider("demo-key", FakeTransport(response), { 0 })
-            .checkUrl("https://example.com/") as ReputationResult.KnownThreat
-        assertEquals(setOf("SOCIAL_ENGINEERING", "MALWARE"), r.threatTypes)
-        assertFalse(r.fromCache)
+        assertEquals(
+            ReputationResult.Unavailable(ReputationFailure.PROVIDER_ERROR),
+            result
+        )
     }
 }

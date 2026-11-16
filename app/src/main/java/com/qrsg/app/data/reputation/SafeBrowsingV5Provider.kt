@@ -9,12 +9,9 @@ import com.qrsg.app.domain.reputation.SkipReason
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.json.JSONArray
-import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.net.SocketTimeoutException
 import java.net.URLEncoder
-import java.nio.charset.StandardCharsets
 import javax.net.ssl.HttpsURLConnection
 import java.net.URL
 
@@ -23,72 +20,83 @@ internal interface SafeBrowsingTransport {
     fun lookup(url: String, apiKey: String): HttpLookupResponse
 }
 
-internal data class HttpLookupResponse(val code: Int, val body: String)
+internal data class HttpLookupResponse(val code: Int, val body: ByteArray)
 
 /** Android identity is passed only as Google API request metadata, not used for authorization. */
 data class AndroidKeyIdentity(val packageName: String, val certSha1: String)
 
-internal class GoogleHttpsTransport(private val identity: AndroidKeyIdentity?) : SafeBrowsingTransport {
-    override fun lookup(url: String, apiKey: String): HttpLookupResponse {
+internal class GoogleHttpsTransport(
+    private val identity: AndroidKeyIdentity?
+) : SafeBrowsingTransport {
+
+    override fun lookup(
+        url: String,
+        apiKey: String
+    ): HttpLookupResponse {
         val request = URL(
             "https://safebrowsing.googleapis.com/v5/urls:search" +
-                "?urls=${URLEncoder.encode(url, "UTF-8")}",
+                "?urls=${URLEncoder.encode(url, "UTF-8")}"
         )
-        val connection = request.openConnection() as HttpsURLConnection
+
+        val connection = request.openConnection()
+            as HttpsURLConnection
+
         try {
             connection.requestMethod = "GET"
             connection.instanceFollowRedirects = false
             connection.connectTimeout = 5_000
             connection.readTimeout = 7_000
-            connection.setRequestProperty("Accept", "application/json")
-            connection.setRequestProperty("X-Goog-Api-Key", apiKey)
+
+            connection.setRequestProperty(
+                "Accept",
+                "application/x-protobuf"
+            )
+            connection.setRequestProperty(
+                "X-Goog-Api-Key",
+                apiKey
+            )
+
             identity?.let {
-                connection.setRequestProperty("X-Android-Package", it.packageName)
-                connection.setRequestProperty("X-Android-Cert", it.certSha1)
+                connection.setRequestProperty(
+                    "X-Android-Package",
+                    it.packageName
+                )
+                connection.setRequestProperty(
+                    "X-Android-Cert",
+                    it.certSha1
+                )
             }
+
             val status = connection.responseCode
-            val stream = if (status in 200..299) connection.inputStream else connection.errorStream
+
+            val stream = if (status in 200..299) {
+                connection.inputStream
+            } else {
+                connection.errorStream
+            }
+
             val body = stream?.use { input ->
                 val output = ByteArrayOutputStream()
                 val buffer = ByteArray(4096)
+
                 while (true) {
                     val n = input.read(buffer)
                     if (n < 0) break
-                    if (output.size() + n > 262_144) throw IllegalStateException("API response too large")
-                    output.write(buffer, 0, n)
-                }
-                String(output.toByteArray(), StandardCharsets.UTF_8)
-            }.orEmpty()
-            
-            val keys = runCatching {
-                JSONObject(body).keys().asSequence().toList()
-            }.getOrDefault(emptyList())
 
-            android.util.Log.d(
-                "QRSG_SB",
-                "HTTP=$status, JSON keys=$keys, length=${body.length}"
-            )
-        //for debuging
-            val jsonResult = runCatching { JSONObject(body) }
-
-            android.util.Log.d(
-                "QRSG_SB",
-                "HTTP=$status, JSON valid=${jsonResult.isSuccess}, " +
-                    "length=${body.length}"
-            )
-
-            // Only for debugging very short responses.
-            // Never log complete URLs, API keys or large response bodies.
-            if (body.length <= 16) {
-                val hex = body.toByteArray(Charsets.UTF_8)
-                    .joinToString(" ") {
-                        "%02X".format(it.toInt() and 0xFF)
+                    if (output.size() + n > 262_144) {
+                        throw IllegalStateException(
+                            "Response too large"
+                        )
                     }
 
-                android.util.Log.d("QRSG_SB", "Response HEX=$hex")
-            }
-        //end of debugin
+                    output.write(buffer, 0, n)
+                }
+
+                output.toByteArray()
+            } ?: ByteArray(0)
+
             return HttpLookupResponse(status, body)
+
         } finally {
             connection.disconnect()
         }
@@ -172,12 +180,7 @@ class SafeBrowsingV5Provider internal constructor(
                 ReputationResult.Unavailable(ReputationFailure.NETWORK)
             } catch (_: java.io.IOException) {
                 ReputationResult.Unavailable(ReputationFailure.NETWORK)
-            } catch (e: Exception) {
-                android.util.Log.e(
-                    "QRSG_SB",
-                    "Unexpected exception: ${e.javaClass.name}"
-                )
-
+            } catch (_: Exception) {
                 ReputationResult.Unavailable(
                     ReputationFailure.MALFORMED_RESPONSE
                 )
@@ -187,37 +190,20 @@ class SafeBrowsingV5Provider internal constructor(
 
     internal data class ParsedResponse(val threatTypes: Set<String>, val cacheDurationMs: Long)
 
-    internal fun parseResponse(raw: String): ParsedResponse {
-        val json = JSONObject(raw)
-        // if (!json.has("cacheDuration")) throw IllegalArgumentException("Missing cacheDuration")
-        val duration = json.optString("cacheDuration", "0s")
-        if (!Regex("^[0-9]+(?:\\.[0-9]{1,9})?s$").matches(duration)) {
-            throw IllegalArgumentException("Bad cacheDuration")
+    internal fun parseResponse(
+        raw: ByteArray
+    ): ParsedResponse {
+        val parsed = try {
+            SafeBrowsingProtobufDecoder.decode(raw)
+        } catch (e: java.io.IOException) {
+            throw IllegalArgumentException(
+                "Invalid protobuf", e
+            )
         }
-        val seconds = duration.dropLast(1).toDouble()
-        if (!seconds.isFinite() || seconds > 86_400.0 * 365.0) {
-            throw IllegalArgumentException("Bad cacheDuration")
-        }
-        val ttlMs = (seconds * 1_000).toLong()
-        if (json.has("threats") && json.opt("threats") !is JSONArray) {
-            throw IllegalArgumentException("Bad threats")
-        }
-        val threats = json.optJSONArray("threats") ?: JSONArray()
-        val types = linkedSetOf<String>()
-        for (i in 0 until threats.length()) {
-            val threat = threats.getJSONObject(i)
-            // The Google response can match an ancestor URL, not only the submitted URL.
-            if (!threat.has("url") || threat.opt("threatTypes") !is JSONArray) {
-                throw IllegalArgumentException("Incomplete threat")
-            }
-            val arr = threat.getJSONArray("threatTypes")
-            if (arr.length() == 0) throw IllegalArgumentException("Threat missing type")
-            for (j in 0 until arr.length()) {
-                val t = arr.getString(j)
-                if (t.isBlank()) throw IllegalArgumentException("Empty threat type")
-                types.add(t)
-            }
-        }
-        return ParsedResponse(types, ttlMs)
+
+        return ParsedResponse(
+            parsed.threatTypes,
+            parsed.cacheDurationMs
+        )
     }
 }

@@ -53,6 +53,7 @@ kotlin {
 }
 
 dependencies {
+    implementation("com.google.protobuf:protobuf-javalite:4.36.2")
   val composeBom = platform(libs.androidx.compose.bom)
   implementation(composeBom)
   androidTestImplementation(composeBom)
