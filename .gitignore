@@ -2,6 +2,7 @@
 .gradle/
 .kotlin/
 **/build/
+4testing/
 
 # Machine-specific local Android SDK path
 local.properties

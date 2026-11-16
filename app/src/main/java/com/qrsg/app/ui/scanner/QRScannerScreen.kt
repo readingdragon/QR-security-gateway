@@ -145,6 +145,10 @@ fun QRScannerScreen(
                         )
                     }
                 }
+                analysis?.let { result ->
+                    OnlineReputationSection(url = scannedValue.orEmpty(), localResult = result)
+                }
+
                 Text(
                     text = "This content has not been opened.",
                     style = MaterialTheme.typography.bodyMedium,

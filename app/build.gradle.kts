@@ -4,6 +4,11 @@ plugins {
   alias(libs.plugins.kotlin.serialization)
 }
 
+val safeBrowsingKey = providers.gradleProperty("QRSG_SAFE_BROWSING_API_KEY")
+    .orElse(providers.environmentVariable("QRSG_SAFE_BROWSING_API_KEY"))
+    .orElse("")
+    .get()
+
 android {
     namespace = "com.qrsg.app"
     compileSdk = 36
@@ -13,6 +18,10 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "1.0"
+        buildConfigField(
+            "String", "QRSG_SAFE_BROWSING_API_KEY",
+            "\"${safeBrowsingKey.replace("\\", "\\\\").replace("\"", "\\\"")}\""
+        )
     }
 
     buildTypes {
@@ -28,7 +37,7 @@ android {
     buildFeatures {
       compose = true
       aidl = false
-      buildConfig = false
+      buildConfig = true
       shaders = false
     }
 
@@ -71,6 +80,7 @@ dependencies {
 
   // Local tests: jUnit, coroutines, Android runner
   testImplementation(libs.junit)
+  testImplementation("org.json:json:20240303") // JVM test of Android org.json parser
   testImplementation(libs.kotlinx.coroutines.test)
 
   // Instrumented tests: jUnit rules and runners
