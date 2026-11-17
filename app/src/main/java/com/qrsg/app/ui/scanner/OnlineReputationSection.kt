@@ -35,6 +35,7 @@ fun OnlineReputationSection(
     url: String,
     localResult: UrlAnalysisResult,
     modifier: Modifier = Modifier,
+    onResultChange: (ReputationResult?) -> Unit = {},
 ) {
     val context = LocalContext.current
     val provider = remember(context) {
@@ -79,9 +80,16 @@ fun OnlineReputationSection(
             enabled = consent && !loading,
             onClick = {
                 loading = true
+                lookupResult = null
+                onResultChange(null)
+
                 scope.launch {
                     try {
-                        lookupResult = provider.checkUrl(url)
+                        val resolved = provider.checkUrl(url)
+
+                        lookupResult = resolved
+                        onResultChange(resolved)
+
                     } catch (cancelled: CancellationException) {
                         throw cancelled
                     } finally {

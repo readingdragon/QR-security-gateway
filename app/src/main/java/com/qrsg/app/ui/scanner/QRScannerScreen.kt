@@ -49,6 +49,8 @@ import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
 import java.util.concurrent.Executors
+import com.qrsg.app.domain.risk.HybridRiskEngine
+import com.qrsg.app.domain.reputation.ReputationResult
 
 @Composable
 fun QRScannerScreen(
@@ -68,6 +70,10 @@ fun QRScannerScreen(
     var scanError by remember { mutableStateOf<String?>(null) }
     val analysis = remember(scannedValue) {
         scannedValue?.let { LocalUrlAnalyzer.analyze(it) }
+    }
+    
+    var onlineResult by remember(scannedValue) {
+        mutableStateOf<ReputationResult?>(null)
     }
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -128,7 +134,14 @@ fun QRScannerScreen(
                 )
 
                 analysis?.let { result ->
-                    Text(
+                    FinalRiskSection(
+                        assessment = HybridRiskEngine.assess(
+                            local = result,
+                            online = onlineResult
+                        )
+                    )
+                    
+                    Text(                        
                         text = result.title,
                         style = MaterialTheme.typography.titleMedium,
                         color = when (result.riskLevel) {
@@ -146,7 +159,11 @@ fun QRScannerScreen(
                     }
                 }
                 analysis?.let { result ->
-                    OnlineReputationSection(url = scannedValue.orEmpty(), localResult = result)
+                    OnlineReputationSection(
+                        url = scannedValue.orEmpty(),
+                        localResult = result,
+                        onResultChange = { onlineResult = it }
+                    )
                 }
 
                 Text(
