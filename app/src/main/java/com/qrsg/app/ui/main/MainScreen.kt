@@ -29,6 +29,7 @@ fun MainScreen(
 ) {
     ScannerHomeScreen(
     onScanClick = { onItemClick(com.qrsg.app.Scanner) },
+    onHistoryClick = { onItemClick(com.qrsg.app.History) },
     modifier = modifier,
     )
 }
@@ -36,6 +37,7 @@ fun MainScreen(
 @Composable
 private fun ScannerHomeScreen(
     onScanClick: () -> Unit,
+    onHistoryClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -102,7 +104,7 @@ private fun ScannerHomeScreen(
         Spacer(Modifier.height(12.dp))
 
         OutlinedButton(
-            onClick = { /* History screen comes later */ },
+            onClick = onHistoryClick,
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text("Scan history")

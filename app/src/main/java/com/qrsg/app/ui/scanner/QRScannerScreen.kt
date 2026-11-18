@@ -51,6 +51,11 @@ import com.google.mlkit.vision.common.InputImage
 import java.util.concurrent.Executors
 import com.qrsg.app.domain.risk.HybridRiskEngine
 import com.qrsg.app.domain.reputation.ReputationResult
+import com.qrsg.app.data.history.ScanHistoryRepository
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.util.UUID
 
 @Composable
 fun QRScannerScreen(
@@ -74,6 +79,30 @@ fun QRScannerScreen(
     
     var onlineResult by remember(scannedValue) {
         mutableStateOf<ReputationResult?>(null)
+    }
+    
+    val historyRepository = remember(context) { ScanHistoryRepository.get(context) }
+    val historyId = remember(scannedValue) {
+        if (scannedValue.isNullOrBlank()) null else UUID.randomUUID().toString()
+    }
+    val historyTime = remember(historyId) { System.currentTimeMillis() }
+    var historySaveFailed by remember(historyId) { mutableStateOf(false) }
+
+    LaunchedEffect(historyId, onlineResult) {
+        val id = historyId
+        val local = analysis
+        if (id != null && local != null) {
+            try {
+                withContext(Dispatchers.IO) {
+                    historyRepository.saveSnapshot(id, historyTime, local, onlineResult)
+                }
+                historySaveFailed = false
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                historySaveFailed = true
+            }
+        }
     }
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -165,7 +194,10 @@ fun QRScannerScreen(
                         onResultChange = { onlineResult = it }
                     )
                 }
-
+                if (historySaveFailed) {
+                    Text("Could not save scan history.", color = MaterialTheme.colorScheme.error)
+                }
+                
                 Text(
                     text = "This content has not been opened.",
                     style = MaterialTheme.typography.bodyMedium,

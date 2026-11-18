@@ -2,6 +2,7 @@ plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.compose.compiler)
   alias(libs.plugins.kotlin.serialization)
+  id("com.google.devtools.ksp")
 }
 
 val safeBrowsingKey = providers.gradleProperty("QRSG_SAFE_BROWSING_API_KEY")
@@ -102,4 +103,12 @@ implementation("androidx.camera:camera-view:1.4.2")
 
 // Google ML Kit — QR/barcode recognition
 implementation("com.google.mlkit:barcode-scanning:17.3.0")
+
+//Room
+implementation("androidx.room:room-runtime:2.8.5")
+ksp("androidx.room:room-compiler:2.8.5")
+}
+
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
 }
