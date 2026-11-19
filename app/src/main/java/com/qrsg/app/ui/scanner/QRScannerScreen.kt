@@ -81,6 +81,9 @@ fun QRScannerScreen(
         mutableStateOf<ReputationResult?>(null)
     }
     
+    var onlineCheckInProgress by remember(scannedValue) {
+    mutableStateOf(false)
+}
     val historyRepository = remember(context) { ScanHistoryRepository.get(context) }
     val historyId = remember(scannedValue) {
         if (scannedValue.isNullOrBlank()) null else UUID.randomUUID().toString()
@@ -191,7 +194,14 @@ fun QRScannerScreen(
                     OnlineReputationSection(
                         url = scannedValue.orEmpty(),
                         localResult = result,
-                        onResultChange = { onlineResult = it }
+                        onResultChange = { onlineResult = it },
+                        onCheckingChange = { onlineCheckInProgress = it },
+                    )
+
+                    OpenScannedLinkButton(
+                        rawValue = scannedValue.orEmpty(),
+                        assessment = HybridRiskEngine.assess(result, onlineResult),
+                        onlineCheckInProgress = onlineCheckInProgress,
                     )
                 }
                 if (historySaveFailed) {
@@ -199,7 +209,7 @@ fun QRScannerScreen(
                 }
                 
                 Text(
-                    text = "This content has not been opened.",
+                    text = "Don't worry, QRSG never opens scanned links automatically.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 Button(

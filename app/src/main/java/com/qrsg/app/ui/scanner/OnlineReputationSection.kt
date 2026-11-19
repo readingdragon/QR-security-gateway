@@ -36,6 +36,7 @@ fun OnlineReputationSection(
     localResult: UrlAnalysisResult,
     modifier: Modifier = Modifier,
     onResultChange: (ReputationResult?) -> Unit = {},
+    onCheckingChange: (Boolean) -> Unit = {},
 ) {
     val context = LocalContext.current
     val provider = remember(context) {
@@ -80,6 +81,7 @@ fun OnlineReputationSection(
             enabled = consent && !loading,
             onClick = {
                 loading = true
+                onCheckingChange(true)
                 lookupResult = null
                 onResultChange(null)
 
@@ -94,6 +96,7 @@ fun OnlineReputationSection(
                         throw cancelled
                     } finally {
                         loading = false
+                        onCheckingChange(false)
                     }
                 }
             },
