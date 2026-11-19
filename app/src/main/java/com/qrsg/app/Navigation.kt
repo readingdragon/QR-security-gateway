@@ -10,6 +10,7 @@ import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.ui.NavDisplay
 import com.qrsg.app.ui.main.MainScreen
 import com.qrsg.app.ui.scanner.QRScannerScreen
+import com.qrsg.app.ui.history.ScanHistoryScreen
 
 @Composable
 fun MainNavigation() {
@@ -29,6 +30,12 @@ fun MainNavigation() {
             }
             entry<Scanner> {
                 QRScannerScreen(
+                    onBack = { backStack.removeLastOrNull() },
+                    modifier = Modifier.safeDrawingPadding(),
+                )
+            }
+            entry<History> {
+                ScanHistoryScreen(
                     onBack = { backStack.removeLastOrNull() },
                     modifier = Modifier.safeDrawingPadding(),
                 )

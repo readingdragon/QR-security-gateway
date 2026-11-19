@@ -49,6 +49,13 @@ import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
 import java.util.concurrent.Executors
+import com.qrsg.app.domain.risk.HybridRiskEngine
+import com.qrsg.app.domain.reputation.ReputationResult
+import com.qrsg.app.data.history.ScanHistoryRepository
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.util.UUID
 
 @Composable
 fun QRScannerScreen(
@@ -68,6 +75,37 @@ fun QRScannerScreen(
     var scanError by remember { mutableStateOf<String?>(null) }
     val analysis = remember(scannedValue) {
         scannedValue?.let { LocalUrlAnalyzer.analyze(it) }
+    }
+    
+    var onlineResult by remember(scannedValue) {
+        mutableStateOf<ReputationResult?>(null)
+    }
+    
+    var onlineCheckInProgress by remember(scannedValue) {
+    mutableStateOf(false)
+}
+    val historyRepository = remember(context) { ScanHistoryRepository.get(context) }
+    val historyId = remember(scannedValue) {
+        if (scannedValue.isNullOrBlank()) null else UUID.randomUUID().toString()
+    }
+    val historyTime = remember(historyId) { System.currentTimeMillis() }
+    var historySaveFailed by remember(historyId) { mutableStateOf(false) }
+
+    LaunchedEffect(historyId, onlineResult) {
+        val id = historyId
+        val local = analysis
+        if (id != null && local != null) {
+            try {
+                withContext(Dispatchers.IO) {
+                    historyRepository.saveSnapshot(id, historyTime, local, onlineResult)
+                }
+                historySaveFailed = false
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                historySaveFailed = true
+            }
+        }
     }
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -128,7 +166,14 @@ fun QRScannerScreen(
                 )
 
                 analysis?.let { result ->
-                    Text(
+                    FinalRiskSection(
+                        assessment = HybridRiskEngine.assess(
+                            local = result,
+                            online = onlineResult
+                        )
+                    )
+                    
+                    Text(                        
                         text = result.title,
                         style = MaterialTheme.typography.titleMedium,
                         color = when (result.riskLevel) {
@@ -145,8 +190,26 @@ fun QRScannerScreen(
                         )
                     }
                 }
+                analysis?.let { result ->
+                    OnlineReputationSection(
+                        url = scannedValue.orEmpty(),
+                        localResult = result,
+                        onResultChange = { onlineResult = it },
+                        onCheckingChange = { onlineCheckInProgress = it },
+                    )
+
+                    OpenScannedLinkButton(
+                        rawValue = scannedValue.orEmpty(),
+                        assessment = HybridRiskEngine.assess(result, onlineResult),
+                        onlineCheckInProgress = onlineCheckInProgress,
+                    )
+                }
+                if (historySaveFailed) {
+                    Text("Could not save scan history.", color = MaterialTheme.colorScheme.error)
+                }
+                
                 Text(
-                    text = "This content has not been opened.",
+                    text = "Don't worry, QRSG never opens scanned links automatically.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 Button(

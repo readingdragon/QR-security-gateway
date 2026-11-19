@@ -8,3 +8,6 @@ data object Main : NavKey
 
 @Serializable
 data object Scanner : NavKey
+
+@Serializable
+data object History : NavKey

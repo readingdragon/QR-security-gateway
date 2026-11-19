@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <exclude domain="database" path="qrsg_history.db" />
+    <exclude domain="database" path="qrsg_history.db-wal" />
+    <exclude domain="database" path="qrsg_history.db-shm" />
+</full-backup-content>

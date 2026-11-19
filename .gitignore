@@ -2,6 +2,7 @@
 .gradle/
 .kotlin/
 **/build/
+4testing/
 
 # Machine-specific local Android SDK path
 local.properties
@@ -20,6 +21,8 @@ captures/
 *.apk
 *.aab
 output-metadata.json
+*.bak
+*.old
 
 # Signing material and secrets
 *.jks

@@ -2,7 +2,13 @@ plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.compose.compiler)
   alias(libs.plugins.kotlin.serialization)
+  id("com.google.devtools.ksp")
 }
+
+val safeBrowsingKey = providers.gradleProperty("QRSG_SAFE_BROWSING_API_KEY")
+    .orElse(providers.environmentVariable("QRSG_SAFE_BROWSING_API_KEY"))
+    .orElse("")
+    .get()
 
 android {
     namespace = "com.qrsg.app"
@@ -13,6 +19,10 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "1.0"
+        buildConfigField(
+            "String", "QRSG_SAFE_BROWSING_API_KEY",
+            "\"${safeBrowsingKey.replace("\\", "\\\\").replace("\"", "\\\"")}\""
+        )
     }
 
     buildTypes {
@@ -28,7 +38,7 @@ android {
     buildFeatures {
       compose = true
       aidl = false
-      buildConfig = false
+      buildConfig = true
       shaders = false
     }
 
@@ -44,6 +54,7 @@ kotlin {
 }
 
 dependencies {
+    implementation("com.google.protobuf:protobuf-javalite:4.36.2")
   val composeBom = platform(libs.androidx.compose.bom)
   implementation(composeBom)
   androidTestImplementation(composeBom)
@@ -71,6 +82,7 @@ dependencies {
 
   // Local tests: jUnit, coroutines, Android runner
   testImplementation(libs.junit)
+  testImplementation("org.json:json:20240303") // JVM test of Android org.json parser
   testImplementation(libs.kotlinx.coroutines.test)
 
   // Instrumented tests: jUnit rules and runners
@@ -91,4 +103,12 @@ implementation("androidx.camera:camera-view:1.4.2")
 
 // Google ML Kit — QR/barcode recognition
 implementation("com.google.mlkit:barcode-scanning:17.3.0")
+
+//Room
+implementation("androidx.room:room-runtime:2.8.5")
+ksp("androidx.room:room-compiler:2.8.5")
+}
+
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
 }
