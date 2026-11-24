@@ -1,8 +1,11 @@
+import org.cyclonedx.model.Component
+
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.compose.compiler)
   alias(libs.plugins.kotlin.serialization)
   id("com.google.devtools.ksp")
+  id("org.cyclonedx.bom") version "3.6.1"
 }
 
 val safeBrowsingKey = providers.gradleProperty("QRSG_SAFE_BROWSING_API_KEY")
@@ -111,4 +114,13 @@ ksp("androidx.room:room-compiler:2.8.5")
 
 ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
+}
+
+// Resolved production runtime dependencies (not debug/test/build tooling).
+tasks.cyclonedxDirectBom {
+    includeConfigs = listOf("releaseRuntimeClasspath")
+    projectType = Component.Type.APPLICATION
+    componentName = "QR Security Gateway"
+    componentGroup = "com.qrsg.app"
+    componentVersion = "1.0"
 }

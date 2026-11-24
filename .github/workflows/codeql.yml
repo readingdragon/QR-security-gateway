@@ -1,0 +1,43 @@
+name: CodeQL
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '27 4 * * 1'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  analyze:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5
+        with:
+          cache-disabled: true
+      - name: Install Android SDK packages
+        run: sdkmanager --install 'platforms;android-36' 'build-tools;36.0.0'
+      - uses: github/codeql-action/init@915412ff23e8b7659517e607487dbeae018f2934 # v4
+        with:
+          languages: java-kotlin
+          build-mode: manual
+          queries: security-extended
+      - name: Compile application for CodeQL
+        run: >-
+          ./gradlew :app:assembleDebug -PQRSG_SAFE_BROWSING_API_KEY=
+          -Pksp.incremental=false --no-configuration-cache --no-build-cache --console=plain
+      - uses: github/codeql-action/analyze@915412ff23e8b7659517e607487dbeae018f2934 # v4
+        with:
+          category: '/language:java-kotlin'

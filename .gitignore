@@ -2,8 +2,10 @@
 .gradle/
 .kotlin/
 **/build/
+local.properties
 4testing/
 qrsg_benchmark/
+security-reports/
 
 # Machine-specific local Android SDK path
 local.properties
@@ -34,3 +36,24 @@ google-services.json
 # Commit build.gradle.kts, settings.gradle.kts, gradle.properties,
 # gradlew, gradlew.bat and gradle/wrapper/* (including gradle-wrapper.jar).
 # Review gradle.properties for secrets before committing it.
+
+# Local secret files and sensitive research data (never commit raw samples)
+.env
+.env.*
+!.env.example
+*.p12
+*.pfx
+*.pem
+*.key
+/qrsg_benchmark/
+/openphish*.txt
+/trusted_urls.txt
+/qr_dataset_legitimate/
+/PhiUSIIL*.csv
+/qrsg-history*.csv
+/qrsg_audit*.csv
+/qrsg_benign_audit*.csv
+/online*.csv
+/offline*.csv
+/trivy-results.json
+.cache/trivy/
