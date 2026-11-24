@@ -3,6 +3,7 @@
 .kotlin/
 **/build/
 4testing/
+qrsg_benchmark/
 
 # Machine-specific local Android SDK path
 local.properties
