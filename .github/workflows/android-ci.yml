@@ -35,7 +35,7 @@ jobs:
           packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
 
       - name: Verify Android SDK
-        run: sdkmanager --version      - 
+        run: sdkmanager --version
       - name: Unit tests, lint and debug build (no API key)
         run: >-
           ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
