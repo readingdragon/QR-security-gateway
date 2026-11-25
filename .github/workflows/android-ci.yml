@@ -1,0 +1,101 @@
+name: Android CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '19 6 * * 1'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: android-ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build-test-sbom:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5
+        with:
+          cache-disabled: true
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
+        with:
+          accept-android-sdk-licenses: 'true'
+          log-accepted-android-sdk-licenses: 'false'
+          packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
+
+      - name: Verify Android SDK
+        run: sdkmanager --version
+      - name: Verify KSP repository access
+        run: |
+          curl -fsSL --retry 3 \
+            -o /dev/null \
+            -w 'Maven Central HTTP status: %{http_code}\n' \
+            'https://repo.maven.apache.org/maven2/com/google/devtools/ksp/symbol-processing-gradle-plugin/2.3.4/symbol-processing-gradle-plugin-2.3.4.pom'
+      - name: Unit tests, lint and debug build (no API key)
+        run: >-
+          ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+          -PQRSG_DISABLE_SAFE_BROWSING=true -Pksp.incremental=false
+          --no-configuration-cache --no-build-cache --console=plain
+      - name: Generate resolved release runtime SBOM
+        run: >-
+          ./gradlew :app:cyclonedxDirectBom -PQRSG_DISABLE_SAFE_BROWSING=true
+          --no-configuration-cache --no-build-cache --console=plain
+      - name: Check SBOM is non-empty and versioned
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path('app/build/reports/cyclonedx-direct/bom.json')
+          bom = json.loads(p.read_text())
+          assert bom['bomFormat'] == 'CycloneDX'
+          components = bom.get('components', [])
+          assert any(c.get('group') == 'androidx.room' and c.get('name', '').startswith('room-runtime') for c in components), 'Expected Room runtime component missing'
+          assert all(c.get('version') for c in components if c.get('purl', '').startswith('pkg:maven/')), 'Missing Maven version'
+          print(f'SBOM contains {len(components)} components')
+          PY
+      - name: Dependency vulnerability scan (Trivy)
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        with:
+          version: 'v0.69.3'
+          scan-type: sbom
+          scan-ref: app/build/reports/cyclonedx-direct/bom.json
+          scanners: vuln
+          format: json
+          output: trivy-results.json
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          ignore-unfixed: 'false'
+          cache: 'false'
+          timeout: '10m'
+      - name: Upload test and lint reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: android-test-lint-${{ github.sha }}
+          path: |
+            app/build/test-results/testDebugUnitTest/*.xml
+            app/build/reports/lint-results-debug.*
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Upload SBOM and vulnerability report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: sbom-${{ github.sha }}
+          path: |
+            app/build/reports/cyclonedx-direct/bom.json
+            app/build/reports/cyclonedx-direct/bom.xml
+            trivy-results.json
+          if-no-files-found: warn
+          retention-days: 30

@@ -1,14 +1,36 @@
+import org.cyclonedx.model.Component
+import com.android.build.api.variant.BuildConfigField
+
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.compose.compiler)
   alias(libs.plugins.kotlin.serialization)
   id("com.google.devtools.ksp")
+  id("org.cyclonedx.bom") version "3.6.1"
 }
 
-val safeBrowsingKey = providers.gradleProperty("QRSG_SAFE_BROWSING_API_KEY")
-    .orElse(providers.environmentVariable("QRSG_SAFE_BROWSING_API_KEY"))
-    .orElse("")
+val disableSafeBrowsing = providers
+    .gradleProperty("QRSG_DISABLE_SAFE_BROWSING")
+    .map { it.toBooleanStrict() }
+    .orElse(true)
     .get()
+
+val safeBrowsingKey = if (disableSafeBrowsing) {
+    ""
+} else {
+    providers.gradleProperty("QRSG_SAFE_BROWSING_API_KEY")
+        .orElse(providers.environmentVariable("QRSG_SAFE_BROWSING_API_KEY"))
+        .orElse("")
+        .get()
+}
+
+val qrsgBuildConfigLiteral = if (disableSafeBrowsing) {
+    "\"\""
+} else {
+    "\"" + safeBrowsingKey
+        .replace("\\", "\\\\")
+        .replace("\"", "\\\"") + "\""
+}
 
 android {
     namespace = "com.qrsg.app"
@@ -20,8 +42,9 @@ android {
         versionCode = 1
         versionName = "1.0"
         buildConfigField(
-            "String", "QRSG_SAFE_BROWSING_API_KEY",
-            "\"${safeBrowsingKey.replace("\\", "\\\\").replace("\"", "\\\"")}\""
+            "String",
+            "QRSG_SAFE_BROWSING_API_KEY",
+            "\"\""
         )
     }
 
@@ -111,4 +134,28 @@ ksp("androidx.room:room-compiler:2.8.5")
 
 ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
+}
+
+// Resolved production runtime dependencies (not debug/test/build tooling).
+tasks.cyclonedxDirectBom {
+    includeConfigs = listOf("releaseRuntimeClasspath")
+    projectType = Component.Type.APPLICATION
+    componentName = "QR Security Gateway"
+    componentGroup = "com.qrsg.app"
+    componentVersion = "1.0"
+}
+
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        if (!disableSafeBrowsing && safeBrowsingKey.isNotEmpty()) {
+            checkNotNull(variant.buildConfigFields).put(
+                "QRSG_SAFE_BROWSING_API_KEY",
+                BuildConfigField(
+                    "String",
+                    qrsgBuildConfigLiteral,
+                    null
+                )
+            )
+        }
+    }
 }

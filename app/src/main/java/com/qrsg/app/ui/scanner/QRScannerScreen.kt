@@ -56,6 +56,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.UUID
+import androidx.annotation.OptIn
+import androidx.camera.core.ExperimentalGetImage
 
 @Composable
 fun QRScannerScreen(
@@ -251,6 +253,7 @@ fun QRScannerScreen(
     }
 }
 
+@OptIn(ExperimentalGetImage::class)
 @Composable
 private fun CameraScannerPreview(
     onQrDetected: (String) -> Unit,
