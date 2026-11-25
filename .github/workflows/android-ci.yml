@@ -32,11 +32,11 @@ jobs:
       - name: Unit tests, lint and debug build (no API key)
         run: >-
           ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
-          -PQRSG_SAFE_BROWSING_API_KEY= -Pksp.incremental=false
+          -PQRSG_DISABLE_SAFE_BROWSING=true -Pksp.incremental=false
           --no-configuration-cache --no-build-cache --console=plain
       - name: Generate resolved release runtime SBOM
         run: >-
-          ./gradlew :app:cyclonedxDirectBom -PQRSG_SAFE_BROWSING_API_KEY=
+          ./gradlew :app:cyclonedxDirectBom -PQRSG_DISABLE_SAFE_BROWSING=true
           --no-configuration-cache --no-build-cache --console=plain
       - name: Check SBOM is non-empty and versioned
         run: |
