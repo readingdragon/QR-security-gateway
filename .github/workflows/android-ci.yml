@@ -36,12 +36,6 @@ jobs:
 
       - name: Verify Android SDK
         run: sdkmanager --version
-      - name: Verify KSP repository access
-        run: |
-          curl -fsSL --retry 3 \
-            -o /dev/null \
-            -w 'Maven Central HTTP status: %{http_code}\n' \
-            'https://repo.maven.apache.org/maven2/com/google/devtools/ksp/symbol-processing-gradle-plugin/2.3.4/symbol-processing-gradle-plugin-2.3.4.pom'
       - name: Unit tests, lint and debug build (no API key)
         run: >-
           ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug

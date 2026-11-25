@@ -35,13 +35,7 @@ jobs:
           packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
 
       - name: Verify Android SDK
-        run: sdkmanager --version
-      - name: Verify KSP repository access
-        run: |
-          curl -fsSL --retry 3 \
-            -o /dev/null \
-            -w 'Maven Central HTTP status: %{http_code}\n' \
-            'https://repo.maven.apache.org/maven2/com/google/devtools/ksp/symbol-processing-gradle-plugin/2.3.4/symbol-processing-gradle-plugin-2.3.4.pom'  
+        run: sdkmanager --version      
       - uses: github/codeql-action/init@915412ff23e8b7659517e607487dbeae018f2934 # v4
         with:
           languages: java-kotlin
