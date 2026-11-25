@@ -27,8 +27,21 @@ jobs:
       - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5
         with:
           cache-disabled: true
-      - name: Install Android SDK packages
-        run: sdkmanager --install 'platforms;android-36' 'build-tools;36.0.0'
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
+        with:
+          accept-android-sdk-licenses: 'true'
+          log-accepted-android-sdk-licenses: 'false'
+          packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
+
+      - name: Verify Android SDK
+        run: sdkmanager --version
+      - name: Verify KSP repository access
+        run: |
+          curl -fsSL --retry 3 \
+            -o /dev/null \
+            -w 'Maven Central HTTP status: %{http_code}\n' \
+            'https://repo.maven.apache.org/maven2/com/google/devtools/ksp/symbol-processing-gradle-plugin/2.3.4/symbol-processing-gradle-plugin-2.3.4.pom'
       - name: Unit tests, lint and debug build (no API key)
         run: >-
           ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug

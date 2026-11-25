@@ -5,10 +5,24 @@ pluginManagement {
                 includeGroupByRegex("androidx.*")
                 includeGroupByRegex("com\\.android.*")
                 includeGroupByRegex("com\\.google.*")
+
+                excludeGroup("com.google.devtools.ksp")
             }
         }
         mavenCentral()
         gradlePluginPortal()
+    }
+
+    resolutionStrategy {
+        eachPlugin {
+            if (requested.id.id == "com.google.devtools.ksp"
+                && requested.version != null) {
+                useModule(
+                    "com.google.devtools.ksp:" +
+                    "symbol-processing-gradle-plugin:${requested.version}"
+                )
+            }
+        }
     }
 }
 dependencyResolutionManagement {
